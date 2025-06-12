@@ -22,12 +22,12 @@ Features health, version, metrics endpoints, request logging, and graceful shutd
 By default the server listens on :8080.
 🔌 Endpoints
 
-## Method	  Path	        Description
-    GET	      /healthz	    Health check (200 “ok”)
-    GET	      /version	    Server version
-    GET	      /metrics	    JSON { requests, total_todos }
+## Method	  Path	          Description
+    GET	      /healthz	      Health check (200 “ok”)
+    GET	      /version	      Server version
+    GET	      /metrics	      JSON { requests, total_todos }
     GET	      /todos	      List all todos
-    POST	    /todos	      Create todo { "title": "..." } → 201 Created
+    POST	  /todos	      Create todo { "title": "..." } → 201 Created
     GET	      /todos/{id}	  Get single todo
     PUT	      /todos/{id}	  Update { "title":"...", "completed":true }
     DELETE	  /todos/{id}	  Delete todo → 204 No Content
