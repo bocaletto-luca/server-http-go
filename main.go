@@ -1,5 +1,5 @@
 // main.go
-// Professional Single‐File HTTP Todo Server in Go
+// Professional Single-File HTTP Todo Server in Go
 // Author: bocaletto-luca
 // License: MIT
 //
@@ -49,7 +49,8 @@ func NewStore() *Store {
 }
 
 func (s *Store) List() []*Todo {
-    s.RLock(); defer s.RUnlock()
+    s.RLock()
+    defer s.RUnlock()
     list := make([]*Todo, 0, len(s.todos))
     for _, t := range s.todos {
         list = append(list, t)
@@ -58,7 +59,8 @@ func (s *Store) List() []*Todo {
 }
 
 func (s *Store) Create(title string) *Todo {
-    s.Lock(); defer s.Unlock()
+    s.Lock()
+    defer s.Unlock()
     t := &Todo{ID: s.next, Title: title}
     s.todos[s.next] = t
     s.next++
@@ -66,13 +68,15 @@ func (s *Store) Create(title string) *Todo {
 }
 
 func (s *Store) Get(id int) (*Todo, bool) {
-    s.RLock(); defer s.RUnlock()
+    s.RLock()
+    defer s.RUnlock()
     t, ok := s.todos[id]
     return t, ok
 }
 
 func (s *Store) Update(id int, title string, completed bool) (*Todo, bool) {
-    s.Lock(); defer s.Unlock()
+    s.Lock()
+    defer s.Unlock()
     t, ok := s.todos[id]
     if !ok {
         return nil, false
@@ -83,7 +87,8 @@ func (s *Store) Update(id int, title string, completed bool) (*Todo, bool) {
 }
 
 func (s *Store) Delete(id int) bool {
-    s.Lock(); defer s.Unlock()
+    s.Lock()
+    defer s.Unlock()
     if _, ok := s.todos[id]; !ok {
         return false
     }
@@ -99,12 +104,17 @@ type Metrics struct {
 }
 
 func (m *Metrics) Inc() {
-    m.Lock(); m.Requests++; m.Unlock()
+    m.Lock()
+    m.Requests++
+    m.Unlock()
 }
 
 func (m *Metrics) Snapshot(store *Store) map[string]int {
-    m.Lock(); defer m.Unlock()
-    store.RLock(); m.TotalTodos = len(store.todos); store.RUnlock()
+    m.Lock()
+    defer m.Unlock()
+    store.RLock()
+    m.TotalTodos = len(store.todos)
+    store.RUnlock()
     return map[string]int{"requests": m.Requests, "total_todos": m.TotalTodos}
 }
 
@@ -145,56 +155,20 @@ func main() {
     metrics := &Metrics{}
 
     mux := http.NewServeMux()
-    mux.HandleFunc("/healthz", healthHandler)
-    mux.HandleFunc("/version", versionHandler)
-    mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+    mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("ok"))
+    })
+    mux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(version))
+    })
+    mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
         js, _ := json.MarshalIndent(metrics.Snapshot(store), "", "  ")
         w.Header().Set("Content-Type", "application/json")
         w.Write(js)
     })
-    mux.HandleFunc("/todos", todosHandler(store))
-    mux.HandleFunc("/todos/", todoHandler(store))
-
-    handler := withLogging(withMetrics(metrics, mux))
-    server := &http.Server{
-        Addr:    fmt.Sprintf(":%d", *port),
-        Handler: handler,
-    }
-
-    // Graceful shutdown
-    idle := make(chan struct{})
-    go func() {
-        c := make(chan os.Signal, 1)
-        signal.Notify(c, os.Interrupt)
-        <-c
-        log.Println("🔌 Shutdown signal received")
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-        server.Shutdown(ctx)
-        close(idle)
-    }()
-
-    log.Printf("🚀 Server v%s listening on :%d", version, *port)
-    if err := server.ListenAndServe(); err != http.ErrServerClosed {
-        log.Fatalf("Server error: %v", err)
-    }
-    <-idle
-    log.Println("👋 Goodbye")
-}
-
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("ok"))
-}
-
-func versionHandler(w http.ResponseWriter, _ *http.Request) {
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte(version))
-}
-
-// todosHandler handles GET/POST on /todos
-func todosHandler(store *Store) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
+    mux.HandleFunc("/todos", func(w http.ResponseWriter, r *http.Request) {
         switch r.Method {
         case http.MethodGet:
             respondJSON(w, store.List(), http.StatusOK)
@@ -209,12 +183,8 @@ func todosHandler(store *Store) http.HandlerFunc {
         default:
             http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         }
-    }
-}
-
-// todoHandler handles GET/PUT/DELETE on /todos/{id}
-func todoHandler(store *Store) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
+    })
+    mux.HandleFunc("/todos/", func(w http.ResponseWriter, r *http.Request) {
         idStr := strings.TrimPrefix(r.URL.Path, "/todos/")
         id, err := strconv.Atoi(idStr)
         if err != nil {
@@ -251,10 +221,35 @@ func todoHandler(store *Store) http.HandlerFunc {
         default:
             http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         }
+    })
+
+    handler := withLogging(withMetrics(metrics, mux))
+    server := &http.Server{
+        Addr:    fmt.Sprintf(":%d", *port),
+        Handler: handler,
     }
+
+    // Graceful shutdown
+    idle := make(chan struct{})
+    go func() {
+        c := make(chan os.Signal, 1)
+        signal.Notify(c, os.Interrupt)
+        <-c
+        log.Println("🔌 Shutdown signal received")
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        server.Shutdown(ctx)
+        close(idle)
+    }()
+
+    log.Printf("🚀 Server v%s listening on :%d", version, *port)
+    if err := server.ListenAndServe(); err != http.ErrServerClosed {
+        log.Fatalf("Server error: %v", err)
+    }
+    <-idle
+    log.Println("👋 Goodbye")
 }
 
-// respondJSON writes data as JSON with status code.
 func respondJSON(w http.ResponseWriter, data interface{}, code int) {
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(code)
